@@ -10,7 +10,7 @@ def zoom_to_bounds(image_arr):
     br = (coords.max(axis=0) + 1)[0:2]
     height = br[0] - tl[0]
     width = br[1] - tl[1]
-    
+
     new_image = tf.image.crop_to_bounding_box(
         image_arr, tl[0], tl[1], height, width
     )

@@ -2,9 +2,9 @@ etc
 Include
 Lib
 Scripts
+.venv
 share
 .ipynb_checkpoints
 __pycache__
 pyvenv.cfg
-data/model
 data/mnist-zoomed-to-bounds.npy

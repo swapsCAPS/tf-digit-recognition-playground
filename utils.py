@@ -1,6 +1,39 @@
 import tensorflow as tf
 import numpy as np
 import cv2
+import math
+from typing import Tuple, Union
+from deskew import determine_skew
+
+def deskew(image: np.ndarray, blur: int = 13, threshold: int = 250, debug=False):
+    def rotate(
+            image: np.ndarray, angle: float, background: Union[int, Tuple[int, int, int]]
+    ) -> np.ndarray:
+        old_width, old_height = image.shape[:2]
+        angle_radian = math.radians(angle)
+        width = abs(np.sin(angle_radian) * old_height) + abs(np.cos(angle_radian) * old_width)
+        height = abs(np.sin(angle_radian) * old_width) + abs(np.cos(angle_radian) * old_height)
+
+        image_center = tuple(np.array(image.shape[1::-1]) / 2)
+        rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+        rot_mat[1, 2] += (width - old_width) / 2
+        rot_mat[0, 2] += (height - old_height) / 2
+        return cv2.warpAffine(image, rot_mat, (int(round(height)), int(round(width))), borderValue=background)
+    
+    image_copy = image.copy()
+    
+    grayscale = cv2.cvtColor(image_copy, cv2.COLOR_BGR2GRAY)
+    th, thresh = cv2.threshold(grayscale, threshold, 255, cv2.THRESH_BINARY)
+    blurred = cv2.GaussianBlur(thresh, (blur,blur), 0)
+    
+    angle = determine_skew(blurred)
+
+    if (debug is True): print(f"deskew() Found angle: {angle}")
+    
+    if (angle < -75): angle = angle + 90
+
+    rotated = rotate(image_copy, angle, (255, 255, 255))
+    return rotated
 
 def zoom_to_bounds(image_arr):
     mask = image_arr > 0

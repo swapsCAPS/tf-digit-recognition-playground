@@ -138,3 +138,20 @@ def simpleMatchTemplate(
     rects, weights = cv2.groupRectangles(rects, 1, rect_thresh)
 
     return rects
+
+###
+# Takes an image, column, row and amount of rows to run for
+# Goes through each row and tries to find the first non 0 pixel at given column
+# TODO is there a more opencv-ic way? Numpy magic? find first on axis or smth?
+#      this will be quite slow ; )
+###
+def find_white_pixel(image, column, from_row, row_amount):
+    found = None
+    for i, r in enumerate(image[from_row:from_row + row_amount]):
+        px = r[column]
+        if (px > 0):
+            found = (column, from_row + i)
+            break
+    if (found is None):
+        raise Exception("Did not find pixel")
+    return found

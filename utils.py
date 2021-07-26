@@ -5,6 +5,7 @@ import cv2
 import math
 from typing import Tuple, Union
 from deskew import determine_skew
+import imutils
 
 # Takes a grayscale image
 def black_blur(image: np.ndarray, blur: int = 13, threshold: int = 250):
@@ -155,3 +156,74 @@ def find_white_pixel(image, column, from_row, row_amount):
     if (found is None):
         raise Exception("Did not find pixel")
     return found
+
+def disp_image(image):
+    plt.figure(figsize=(25, 25))
+    plt.imshow(image)
+    plt.show()
+
+def findHoriLines(image, max_height=100, min_width=1000, debug=False):
+    # these are coords yay!
+    cnts = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = imutils.grab_contours(cnts)
+    areas = [cv2.contourArea(c) for c in cnts]
+    polys = [cv2.approxPolyDP(c, 3, True) for c in cnts]
+    rects = [cv2.boundingRect(p) for p in polys]
+
+    result = []
+    for r in rects:
+        x, y, w, h = r
+
+        if abs(h) > max_height: continue
+        if abs(w) < min_width: continue
+
+        result.append(r)
+
+    # Sort top to bottom
+    result.sort(key=lambda r: r[1])
+
+    def draw():
+        copy = image.copy()
+        copy = cv2.cvtColor(copy, cv2.COLOR_BGR2RGB)
+        cv2.drawContours(copy, cnts, -1, (0, 255, 255), 2)
+
+        for x, y, w, h in result:
+            cv2.rectangle(copy, (x, y), (x + w, y + h), (255, 0, 0), 5)
+        disp_image(copy)
+
+    if (debug is True):
+        draw()
+
+    if len(result) != 2:
+        draw()
+        raise Exception(f"findHoriLines() found only [{len(result)}] line(s)")
+
+    return result
+
+
+def straighten_front(
+    orig,
+    pad=150,
+    border_value=(255, 255, 255),
+    debug=False
+):
+    img_gray = cv2.cvtColor(orig, cv2.COLOR_BGR2GRAY)
+    th, thresh = cv2.threshold(img_gray, 254, 255, cv2.THRESH_BINARY)
+    thresh = cv2.erode(thresh, None, iterations=5)
+    thresh = 255 - thresh
+
+    [ first, last ] = findHoriLines(thresh, min_width=thresh.shape[1] - 300, debug=False)
+
+    tl = find_white_pixel(thresh, first[0]               , first[1], first[3])
+    tr = find_white_pixel(thresh, first[0] + first[2] - 1, first[1], first[3])
+    bl = find_white_pixel(thresh, last[0]                , last[1],  last[3])
+    br = find_white_pixel(thresh, last[0]  + last[2]  - 1, last[1],  last[3])
+
+    actual = np.float32([tl, tr, bl, br])
+    rows, cols, d = orig.shape
+    wanted = np.float32([ [pad, pad], [cols - pad, pad], [pad, rows - pad], [cols - pad, rows - pad] ])
+    M, mask = cv2.findHomography(actual,wanted)
+    dst = cv2.warpPerspective(orig, M, (cols, rows), borderValue=border_value)
+
+    if (debug is True): disp_image(dst)
+    return dst

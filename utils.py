@@ -10,11 +10,11 @@ import imutils
 # Takes a grayscale image
 def black_blur(image: np.ndarray, blur: int = 13, threshold: int = 250):
     # TODO what if it is gray already? or other shape?
-    print(image.shape)
+    print(f"black_blur image.shape: {image.shape}")
 
     res = None
 
-    if len(image.shape) > 2:
+    if image.shape[2] is 3:
         res = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     th, res = cv2.threshold(res, threshold, 255, cv2.THRESH_BINARY)
@@ -141,8 +141,8 @@ def simpleMatchTemplate(
     return rects
 
 ###
-# Takes an image, column, row and amount of rows to run for
-# Goes through each row and tries to find the first non 0 pixel at given column
+# Takes an image, column, row and amount of rows to run for (range)
+# Goes through each row top to bottom and tries to find the first non 0 pixel at given column
 # TODO is there a more opencv-ic way? Numpy magic? find first on axis or smth?
 #      this will be quite slow ; )
 ###
@@ -194,25 +194,35 @@ def findHoriLines(image, max_height=100, min_width=1000, debug=False):
     if (debug is True):
         draw()
 
-    if len(result) != 2:
+    if len(result) < 2:
         draw()
         raise Exception(f"findHoriLines() found only [{len(result)}] line(s)")
 
     return result
 
-
-def straighten_front(
+###
+# Staightens a poule page using the top and bottom lines and/or bars
+###
+def straighten_page(
     orig,
     pad=150,
     border_value=(255, 255, 255),
-    debug=False
+    debug=False,
+    max_line_height=100,
 ):
     img_gray = cv2.cvtColor(orig, cv2.COLOR_BGR2GRAY)
     th, thresh = cv2.threshold(img_gray, 254, 255, cv2.THRESH_BINARY)
     thresh = cv2.erode(thresh, None, iterations=5)
     thresh = 255 - thresh
 
-    [ first, last ] = findHoriLines(thresh, min_width=thresh.shape[1] - 300, debug=False)
+    lines = findHoriLines(
+        thresh, 
+        min_width=thresh.shape[1] - 300, 
+        debug=True, 
+        max_height=max_line_height,
+    )
+    first = lines[0]
+    last  = lines[-1]
 
     tl = find_white_pixel(thresh, first[0]               , first[1], first[3])
     tr = find_white_pixel(thresh, first[0] + first[2] - 1, first[1], first[3])
@@ -221,8 +231,13 @@ def straighten_front(
 
     actual = np.float32([tl, tr, bl, br])
     rows, cols, d = orig.shape
-    wanted = np.float32([ [pad, pad], [cols - pad, pad], [pad, rows - pad], [cols - pad, rows - pad] ])
-    M, mask = cv2.findHomography(actual,wanted)
+    wanted = np.float32([ 
+        [pad, pad], 
+        [cols - pad, pad], 
+        [pad, rows - pad], 
+        [cols - pad, rows - pad],
+    ])
+    M, mask = cv2.findHomography(actual, wanted)
     dst = cv2.warpPerspective(orig, M, (cols, rows), borderValue=border_value)
 
     if (debug is True): disp_image(dst)

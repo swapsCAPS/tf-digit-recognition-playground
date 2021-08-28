@@ -14,7 +14,7 @@ def black_blur(image: np.ndarray, blur: int = 13, threshold: int = 250):
 
     res = None
 
-    if image.shape[2] is 3:
+    if image.shape[2] == 3:
         res = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     th, res = cv2.threshold(res, threshold, 255, cv2.THRESH_BINARY)
@@ -157,9 +157,12 @@ def find_white_pixel(image, column, from_row, row_amount):
         raise Exception("Did not find pixel")
     return found
 
-def disp_image(image):
+def disp_image(image, convert_color=None):
     plt.figure(figsize=(25, 25))
-    plt.imshow(image)
+    if convert_color != None:
+        plt.imshow(cv2.cvtColor(image, convert_color))
+    else:
+        plt.imshow(image)
     plt.show()
 
 def findHoriLines(image, max_height=100, min_width=1000, debug=False):
@@ -189,6 +192,7 @@ def findHoriLines(image, max_height=100, min_width=1000, debug=False):
 
         for x, y, w, h in result:
             cv2.rectangle(copy, (x, y), (x + w, y + h), (255, 0, 0), 5)
+        print("findHoriLines():")
         disp_image(copy)
 
     if (debug is True):
@@ -216,25 +220,47 @@ def straighten_page(
     thresh = 255 - thresh
 
     lines = findHoriLines(
-        thresh, 
-        min_width=thresh.shape[1] - 300, 
-        debug=True, 
+        thresh,
+        min_width=thresh.shape[1] - 300,
+        debug=debug,
         max_height=max_line_height,
     )
     first = lines[0]
     last  = lines[-1]
 
-    tl = find_white_pixel(thresh, first[0]               , first[1], first[3])
-    tr = find_white_pixel(thresh, first[0] + first[2] - 1, first[1], first[3])
-    bl = find_white_pixel(thresh, last[0]                , last[1],  last[3])
-    br = find_white_pixel(thresh, last[0]  + last[2]  - 1, last[1],  last[3])
+    # Add a little margin to the columns to reduce errors
+    col_margin = 5
+
+    tl = find_white_pixel(thresh, first[0]            + col_margin, first[1], first[3])
+    tr = find_white_pixel(thresh, first[0] + first[2] - col_margin, first[1], first[3])
+    bl = find_white_pixel(thresh, last[0]             + col_margin, last[1],  last[3])
+    br = find_white_pixel(thresh, last[0]  + last[2]  - col_margin, last[1],  last[3])
+
+    if (debug is True):
+        print('first', first)
+        print('last', last)
+
+        print('tl', tl)
+        print('tr', tr)
+        print('bl', bl)
+        print('br', br)
+
+        copy = thresh.copy()
+        copy = cv2.cvtColor(copy, cv2.COLOR_BGR2RGB)
+
+        cv2.drawMarker(copy, tl, (0, 255, 0), markerType=cv2.MARKER_CROSS, thickness=2)
+        cv2.drawMarker(copy, tr, (0, 255, 0), markerType=cv2.MARKER_CROSS, thickness=2)
+        cv2.drawMarker(copy, bl, (0, 255, 0), markerType=cv2.MARKER_CROSS, thickness=2)
+        cv2.drawMarker(copy, br, (0, 255, 0), markerType=cv2.MARKER_CROSS, thickness=2)
+
+        disp_image(copy)
 
     actual = np.float32([tl, tr, bl, br])
     rows, cols, d = orig.shape
-    wanted = np.float32([ 
-        [pad, pad], 
-        [cols - pad, pad], 
-        [pad, rows - pad], 
+    wanted = np.float32([
+        [pad, pad],
+        [cols - pad, pad],
+        [pad, rows - pad],
         [cols - pad, rows - pad],
     ])
     M, mask = cv2.findHomography(actual, wanted)
@@ -242,3 +268,49 @@ def straighten_page(
 
     if (debug is True): disp_image(dst)
     return dst
+
+###
+# https://learnopencv.com/feature-based-image-alignment-using-opencv-c-python/
+# Thanks to Satya Mallick again!
+###
+def alignImages(im1, im2, max_features=500, match_ratio=0.15):
+    # Convert images to grayscale
+    im1Gray = cv2.cvtColor(im1, cv2.COLOR_BGR2GRAY)
+    im2Gray = cv2.cvtColor(im2, cv2.COLOR_BGR2GRAY)
+
+    # Detect ORB features and compute descriptors.
+    orb = cv2.ORB_create(max_features)
+    keypoints1, descriptors1 = orb.detectAndCompute(im1Gray, None)
+    keypoints2, descriptors2 = orb.detectAndCompute(im2Gray, None)
+
+    # Match features.
+    matcher = cv2.DescriptorMatcher_create(cv2.DESCRIPTOR_MATCHER_BRUTEFORCE_HAMMING)
+    matches = matcher.match(descriptors1, descriptors2, None)
+
+    # Sort matches by score
+    matches.sort(key=lambda x: x.distance, reverse=False)
+
+    # Remove not so good matches
+    numGoodMatches = int(len(matches) * match_ratio)
+    matches = matches[:numGoodMatches]
+
+    # Draw top matches
+    imMatches = cv2.drawMatches(im1, keypoints1, im2, keypoints2, matches, None)
+    cv2.imwrite("matches.jpg", imMatches)
+
+    # Extract location of good matches
+    points1 = np.zeros((len(matches), 2), dtype=np.float32)
+    points2 = np.zeros((len(matches), 2), dtype=np.float32)
+
+    for i, match in enumerate(matches):
+        points1[i, :] = keypoints1[match.queryIdx].pt
+        points2[i, :] = keypoints2[match.trainIdx].pt
+
+    # Find homography
+    h, mask = cv2.findHomography(points1, points2, cv2.RANSAC)
+
+    # Use homography
+    height, width, channels = im2.shape
+    im1Reg = cv2.warpPerspective(im1, h, (width, height))
+
+    return im1Reg, h
